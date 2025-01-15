@@ -25,9 +25,53 @@ async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
+    const UserCollection = client.db("bistroDB").collection("users"); 
     const MenuCollection = client.db("bistroDB").collection("menu"); 
     const ReviewCollection = client.db("bistroDB").collection("reviews"); 
     const CartCollection = client.db("bistroDB").collection("carts"); 
+    
+
+
+    //user related api
+    app.get('/users',async(req,res)=>{
+      const result = await UserCollection.find().toArray();
+      res.send(result);
+    })
+    app.post('/users',async(req,res)=>{
+      const user = req.body;
+      const query = {email:user.email};
+      const existingEmail = await UserCollection.findOne(query);
+      if(existingEmail){
+        return  res.send({message:"user already existed!",insertedId:null})
+      }
+      const result = await UserCollection.insertOne(user);
+      res.send(result);
+  })
+  app.delete('/users/:id',async(req,res)=>{
+    const id = req.params.id;
+    const query = {_id:new ObjectId(id)};
+    const result = await UserCollection.deleteOne(query);
+    res.send(result);
+  })
+  
+  //admin related api
+  app.patch('/users/admin/:id', async (req, res) => {
+    const id = req.params.id; // Correctly get id from route parameters
+    const filter = { _id: new ObjectId(id) };
+    const updatedDoc = {
+        $set: {
+            role: "admin"
+        }
+    };
+    try {
+        const result = await UserCollection.updateOne(filter, updatedDoc);
+        res.send(result);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send({ error: "An error occurred while updating the user role." });
+    }
+});
+
 
     app.get('/menu',async(req,res)=>{
         const result = await MenuCollection.find().toArray();
