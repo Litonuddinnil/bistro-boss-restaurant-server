@@ -1,6 +1,7 @@
 const express = require('express');
 const app = express();
 const cors = require('cors');
+const jwt = require('jsonwebtoken');
 require('dotenv').config()
 const port = process.env.PORT || 5000;
 //middleWare 
@@ -30,10 +31,56 @@ async function run() {
     const ReviewCollection = client.db("bistroDB").collection("reviews"); 
     const CartCollection = client.db("bistroDB").collection("carts"); 
     
-
-
+  //jwt token related
+  app.post('/jwt', async (req, res) => {
+    const { email } = req.body;   
+    if (!email) {
+      return res.status(400).send({ message: 'Email is required' });
+    } 
+    const token = jwt.sign({ email }, process.env.ACESSS_TOKEN_SECRET, { expiresIn: '1h' });
+    res.send({ token });
+  });
+  
+ const verifyToken = (req,res,next)=>{
+  // console.log('Inside the verifyToken',req.headers.authorization);
+  if(!req.headers.authorization){
+    return res.status(401).send({message:'Unauthorize Access!'});
+  }
+  const token = req.headers.authorization.split(' ')[1]; 
+  jwt.verify(token,process.env.ACESSS_TOKEN_SECRET,(err,decoded)=>{
+    if(err){
+      return res.status(401).send({message:'Unauthorize Access!'});
+    }
+    req.decoded = decoded;  
+    next();
+  }) 
+ };
+ //use verify admin after verifyToken
+ const verifyAdmin =async (req,res,next)=>{
+ const email = req.decoded.email;
+ const query = {email:email};
+ const user = await UserCollection.findOne(query);
+ const isAdmin = user?.role ==='admin';
+ if(!isAdmin){
+  res.status(403).send({message:'Forbidden Access!'});
+ }
+ next();
+ }
+ app.get('/users/admin/:email',verifyToken,async(req,res)=>{
+  const email = req.params.email;  
+  if(email !== req.decoded.email){
+    return res.status(403).send({message:'Forbidden  Access'})
+  }
+  const query = {email:email};
+  const user = await UserCollection.findOne(query);
+  let admin = false;
+  if(user){
+    admin = user?.role === 'admin';
+  }
+  res.send({admin});
+ })
     //user related api
-    app.get('/users',async(req,res)=>{
+    app.get('/users',verifyToken,verifyAdmin,async(req,res)=>{
       const result = await UserCollection.find().toArray();
       res.send(result);
     })
@@ -47,7 +94,7 @@ async function run() {
       const result = await UserCollection.insertOne(user);
       res.send(result);
   })
-  app.delete('/users/:id',async(req,res)=>{
+  app.delete('/users/:id',verifyAdmin,verifyToken,async(req,res)=>{
     const id = req.params.id;
     const query = {_id:new ObjectId(id)};
     const result = await UserCollection.deleteOne(query);
@@ -55,7 +102,7 @@ async function run() {
   })
   
   //admin related api
-  app.patch('/users/admin/:id', async (req, res) => {
+  app.patch('/users/admin/:id',verifyAdmin,verifyToken, async (req, res) => {
     const id = req.params.id; // Correctly get id from route parameters
     const filter = { _id: new ObjectId(id) };
     const updatedDoc = {
@@ -77,6 +124,34 @@ async function run() {
         const result = await MenuCollection.find().toArray();
         res.send(result);
     })
+    app.post('/menu',verifyToken,verifyAdmin,async(req,res)=>{
+      const item = req.body;
+      const result = await MenuCollection.insertOne(item);
+      res.send(result);
+    })
+    app.delete('/menu/:id', verifyToken, verifyAdmin, async (req, res) => {
+      const id = req.params.id; 
+      const query = { _id: new ObjectId(id)}; 
+      const result = await MenuCollection.deleteOne(query);  
+      res.send(result);
+  });
+  app.put('/menu/:id', verifyToken, verifyAdmin, async (req, res) => {
+    const id = req.params.id;   
+    const filter = { _id: id}; 
+    const updateMenuItems = req.body; 
+    const updatedDoc = {
+      $set: {
+        name: updateMenuItems.name,
+        category: updateMenuItems.category, 
+        price: updateMenuItems.price, 
+      }
+    };   
+      const result = await MenuCollection.updateOne(filter, updatedDoc);  
+      res.send(result); 
+  });
+  
+  
+  
     app.get('/reviews',async(req,res)=>{
         const result = await ReviewCollection.find().toArray();
         res.send(result);
